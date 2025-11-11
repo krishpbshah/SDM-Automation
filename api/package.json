@@ -4,10 +4,7 @@
   "description": "Workflow automation runner with Playwright, deployed on Vercel",
   "main": "index.html",
   "scripts": {
-    "dev": "vercel dev",
-    "build": "vercel build",
-    "start": "vercel start",
-    "postinstall": "npx playwright install chromium --with-deps"
+    "postinstall": "npx playwright install chromium"
   },
   "dependencies": {
     "playwright": "^1.48.0"
