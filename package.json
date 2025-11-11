@@ -1,0 +1,7 @@
+{
+  "name": "ttc-workflow-runner",
+  "version": "1.0.0",
+  "dependencies": {
+    "playwright": "^1.48.0"
+  }
+}
