@@ -1,7 +1,7 @@
 /**
  * ttc-workflow-tasks.js
  *
- * Flow:
+ * Flow
  * 1) Open CA SDM -> Global search -> ticket popup
  * 2) Additional Information -> Workflow Tasks (tabHyprlnk1_5) -> wait for cr_wf iframe
  * 3) For each task (e.g., 200, 250): open detail popup
