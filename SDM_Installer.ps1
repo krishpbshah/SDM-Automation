@@ -1,6 +1,21 @@
-@'
+$packageJson = @'
+{
+  "name": "sdm-automation",
+  "version": "1.0.0",
+  "description": "Automation script for SDM",
+  "main": "SDM_CLI.js",
+  "scripts": {
+    "start": "node SDM_CLI.js"
+  },
+  "dependencies": {
+    "inquirer": "8.2.5",
+    "playwright": "^1.40.0"
+  }
+}
+'@
+$packageJson | Set-Content -Path ".\package.json" -Encoding UTF8
 
-
+$scriptContent = @'
 /**
  * SDM_CLI.js
  *
@@ -530,6 +545,4 @@ async function discoverTasks(wfFrame) {
         await browser.close();
     }
 })();
-
-
 '@ | Set-Content -Path ".\SDM_CLI.js" -Encoding UTF8
