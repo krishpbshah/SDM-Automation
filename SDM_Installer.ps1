@@ -532,4 +532,4 @@ async function discoverTasks(wfFrame) {
 })();
 
 
-'@ | Set-Content -Path ".\Automation.js" -Encoding UTF8
+'@ | Set-Content -Path ".\SDM_CLI.js" -Encoding UTF8
