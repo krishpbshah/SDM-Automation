@@ -212,7 +212,7 @@ app.get('/', (req, res) => {
 
 function log(type, msg) {
     const safeType = (type || 'info').toString();
-    console.log(\`[\${safeType.toUpperCase()}] \${msg}\`);
+    console.log(`[${safeType.toUpperCase()}] ${msg}`);
     io.emit('log', { type: safeType, msg });
 }
 
@@ -232,7 +232,7 @@ async function initBrowser() {
     context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1400, height: 900 } });
     page = await context.newPage();
     
-    log('info', \`Navigating to \${BASE_URL}\`);
+    log('info', `Navigating to ${BASE_URL}`);
     try {
         await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
         await waitSettled(page, 2000);
@@ -250,12 +250,12 @@ io.on('connection', (socket) => {
 
     socket.on('set_user', (data) => {
         // Format: "Last, First"
-        userAssignee = \`\${data.last}, \${data.first}\`;
-        log('success', \`Assignee set to: \${userAssignee}\`);
+        userAssignee = `${data.last}, ${data.first}`;
+        log('success', `Assignee set to: ${userAssignee}`);
     });
 
     socket.on('open_ticket', async (data) => {
-        log('info', \`Opening Ticket \${data.num} (\${data.type})...\`);
+        log('info', `Opening Ticket ${data.num} (${data.type})...`);
         try {
             const searchFrame = await findFrameWithSelectors(page, ['input[name="searchKey"]'], 5000);
             if (!searchFrame) throw new Error('Search UI not found');
@@ -291,7 +291,7 @@ io.on('connection', (socket) => {
             socket.data.wfFrame = wfFrame;
             
             socket.emit('tasks_discovered', tasks);
-            log('info', \`Tasks Discovered: \${tasks.join(', ')}\`);
+            log('info', `Tasks Discovered: ${tasks.join(', ')}`);
 
         } catch (e) {
             log('error', e.message);
@@ -303,10 +303,10 @@ io.on('connection', (socket) => {
         const wfFrame = socket.data.wfFrame;
         if(!popup) return log('error', 'No active ticket popup');
 
-        log('info', \`Processing Tasks: \${tasks.join(', ')}\`);
+        log('info', `Processing Tasks: ${tasks.join(', ')}`);
 
         for (const taskText of tasks) {
-            log('info', \`Starting Task \${taskText}...\`);
+            log('info', `Starting Task ${taskText}...`);
             let success = false;
             for(let attempt=1; attempt<=3; attempt++) {
                 try {
@@ -326,15 +326,15 @@ io.on('connection', (socket) => {
                     if(!detailPopup) throw new Error('Detail popup failed to open');
                     
                     await updateTaskDetail(detailPopup, taskText);
-                    log('success', \`Task \${taskText} Completed!\`);
+                    log('success', `Task ${taskText} Completed!`);
                     success = true;
                     break;
                 } catch (e) {
-                    log('warn', \`Attempt \${attempt} failed: \${e.message}\`);
+                    log('warn', `Attempt ${attempt} failed: ${e.message}`);
                     await new Promise(r => setTimeout(r, 2000));
                 }
             }
-            if(!success) log('error', \`Failed to process Task \${taskText}\`);
+            if(!success) log('error', `Failed to process Task ${taskText}`);
         }
         log('success', 'All requested tasks finished.');
     });
@@ -390,13 +390,13 @@ async function openWorkflowTasksTab(popup) {
 async function discoverTasks(wfFrame) {
     return await wfFrame.evaluate(() => {
         const anchors = Array.from(document.querySelectorAll('a.record, a[href^="javascript:do_default("], tr.jqgrow td:first-child a'));
-        return [...new Set(anchors.map(a => a.textContent.trim()).filter(t => /^\\d+$/.test(t)))].sort();
+        return [...new Set(anchors.map(a => a.textContent.trim()).filter(t => /^\d+$/.test(t)))].sort();
     });
 }
 
 async function findTaskAnchorAcrossFrames(popup, taskText, preferredFrame) {
     // ... (Same logic)
-    const exactText = new RegExp(\`^\\\\s*\${taskText}\\\\s*$\`);
+    const exactText = new RegExp(`^\\s*${taskText}\\s*$`);
     const tryFrame = async (f) => {
         const l = f.locator('a.record', { hasText: exactText }).first();
         if(await l.count()) return { frame: f, locator: l };
@@ -411,14 +411,14 @@ async function invokeDoDefaultForTask(frame, taskText) {
     return await frame.evaluate((text) => {
         const a = Array.from(document.querySelectorAll('a[href^="javascript:do_default("]')).find(x => x.textContent.trim() == text);
         if(!a) return false;
-        const m = a.getAttribute('href').match(/do_default\\((\\d+)\\)/);
+        const m = a.getAttribute('href').match(/do_default\((\d+)\)/);
         if(m) { window.do_default(m[1]); return true; }
         return false;
     }, taskText);
 }
 
 async function updateTaskDetail(detailPopup, taskText) {
-    log('info', \`Updating Task \${taskText}...\`);
+    log('info', `Updating Task ${taskText}...`);
     const mainFrame = detailPopup.frames().find(f => f.name() === 'cai_main') || detailPopup.mainFrame();
     
     // Edit
@@ -449,7 +449,7 @@ async function updateTaskDetail(detailPopup, taskText) {
 
 // ---- Start Server ----
 server.listen(PORT, () => {
-    console.log(\`Server running at http://localhost:\${PORT}\`);
-    open(\`http://localhost:\${PORT}\`);
+    console.log(`Server running at http://localhost:${PORT}`);
+    open(`http://localhost:${PORT}`);
 });
 '@ | Set-Content -Path ".\SDM_CLI.js" -Encoding UTF8
