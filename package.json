@@ -1,0 +1,13 @@
+{
+  "name": "sdm-automation",
+  "version": "1.0.0",
+  "description": "Automation script for SDM",
+  "main": "Automation.js",
+  "scripts": {
+    "start": "node Automation.js"
+  },
+  "dependencies": {
+    "inquirer": "^8.2.5",
+    "playwright": "^1.40.0"
+  }
+}
