@@ -1,3 +1,6 @@
+@'
+
+
 /**
  * SDM_CLI.js
  *
@@ -527,3 +530,6 @@ async function discoverTasks(wfFrame) {
         await browser.close();
     }
 })();
+
+
+'@ | Set-Content -Path ".\Automation.js" -Encoding UTF8
