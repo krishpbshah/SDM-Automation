@@ -1,3 +1,12 @@
+$npmrc = @'
+strict-ssl=false
+registry=http://registry.npmjs.org/
+'@
+$npmrc | Set-Content -Path ".\.npmrc" -Encoding UTF8
+
+# Set env var for the current session just in case
+$env:NODE_TLS_REJECT_UNAUTHORIZED = "0"
+
 $packageJson = @'
 {
   "name": "sdm-automation",
