@@ -211,8 +211,9 @@ app.get('/', (req, res) => {
 // ---- Automation Logic ----
 
 function log(type, msg) {
-    console.log(\`[\${type.toUpperCase()}] \${msg}\`);
-    io.emit('log', { type, msg });
+    const safeType = (type || 'info').toString();
+    console.log(\`[\${safeType.toUpperCase()}] \${msg}\`);
+    io.emit('log', { type: safeType, msg });
 }
 
 async function waitSettled(pageLike, timeoutMs = 15000) {
