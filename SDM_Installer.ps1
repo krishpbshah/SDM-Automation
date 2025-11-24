@@ -308,6 +308,8 @@ io.on('connection', (socket) => {
         for (const taskText of tasks) {
             log('info', `Starting Task ${taskText}...`);
             let success = false;
+            let detailPopup = null;
+
             for(let attempt=1; attempt<=3; attempt++) {
                 try {
                     // Find Anchor
@@ -319,7 +321,7 @@ io.on('connection', (socket) => {
                     }
 
                     // Click
-                    const detailPopup = await runAndCatchPopup(popup, context, async () => {
+                    detailPopup = await runAndCatchPopup(popup, context, async () => {
                         if(anchor && anchor.locator) await anchor.locator.click({timeout: 4000});
                     }, 10000);
 
@@ -331,10 +333,20 @@ io.on('connection', (socket) => {
                     break;
                 } catch (e) {
                     log('warn', `Attempt ${attempt} failed: ${e.message}`);
+                    if(detailPopup) await detailPopup.close().catch(()=>{}); // Close if failed
+                    detailPopup = null;
                     await new Promise(r => setTimeout(r, 2000));
                 }
             }
+            
+            if(success && detailPopup) {
+                await detailPopup.close().catch(()=>{});
+            }
+            
             if(!success) log('error', `Failed to process Task ${taskText}`);
+            
+            // Wait before next task
+            await new Promise(r => setTimeout(r, 2000));
         }
         log('success', 'All requested tasks finished.');
     });
@@ -462,54 +474,38 @@ async function updateTaskDetail(detailPopup, taskText) {
     const headerFrame = await findHeaderFrame(detailPopup);
     const mainFrame = await findMainFrame(detailPopup);
 
-    // Edit
-    try {
-        await clickHeaderButtonByText(headerFrame, 'Edit', 8000);
-        await waitSettled(detailPopup, 1200);
-        await mainFrame.waitForSelector('input[name="assignee_combo_name"]', { timeout: 6000 });
-        await mainFrame.waitForSelector('select[name="SET.status"]', { timeout: 6000 });
-    } catch (e) {
-        log('warn', `Edit click issue: ${e.message}`);
-    }
+    // Edit - CRITICAL: Throw if fails
+    await clickHeaderButtonByText(headerFrame, 'Edit', 8000);
+    await waitSettled(detailPopup, 1200);
+    await mainFrame.waitForSelector('input[name="assignee_combo_name"]', { timeout: 6000 });
+    await mainFrame.waitForSelector('select[name="SET.status"]', { timeout: 6000 });
 
     // Assignee
-    try {
-        const assignee = mainFrame.locator('input[name="assignee_combo_name"]');
-        if (await assignee.count()) {
-            await assignee.click({ timeout: 2000 }).catch(() => {});
-            await assignee.fill(userAssignee, { timeout: 3000 });
-            await assignee.press('Enter').catch(() => {});
-            await assignee.evaluate(el => el.blur()).catch(() => {});
-            await waitSettled(detailPopup, 500);
-        } else {
-            log('warn', `Assignee field not found in main frame.`);
-        }
-    } catch (e) {
-        log('warn', `Assignee set error: ${e.message}`);
+    const assignee = mainFrame.locator('input[name="assignee_combo_name"]');
+    if (await assignee.count()) {
+        await assignee.click({ timeout: 2000 }).catch(() => {});
+        await assignee.fill(userAssignee, { timeout: 3000 });
+        await assignee.press('Enter').catch(() => {});
+        await assignee.evaluate(el => el.blur()).catch(() => {});
+        await waitSettled(detailPopup, 500);
+    } else {
+        throw new Error('Assignee field not found');
     }
 
     // Status
-    try {
-        const statusSel = 'select[name="SET.status"]';
-        const status = mainFrame.locator(statusSel);
-        if (await status.count()) {
-            const ok = await selectOptionSmart(mainFrame, statusSel, 'COMP', 'Complete');
-            if (!ok) log('warn', `Could not set status to Complete`);
-            await waitSettled(detailPopup, 300);
-        } else {
-            log('warn', `Status select not found in main frame.`);
-        }
-    } catch (e) {
-        log('warn', `Status set error: ${e.message}`);
+    const statusSel = 'select[name="SET.status"]';
+    const status = mainFrame.locator(statusSel);
+    if (await status.count()) {
+        const ok = await selectOptionSmart(mainFrame, statusSel, 'COMP', 'Complete');
+        if (!ok) throw new Error('Could not set status to Complete');
+        await waitSettled(detailPopup, 300);
+    } else {
+        throw new Error('Status select not found');
     }
 
     // Save
-    try {
-        await clickHeaderButtonByText(headerFrame, 'Save', 8000);
-        await waitSettled(detailPopup, 1500);
-    } catch (e) {
-        log('warn', `Save click error: ${e.message}`);
-    }
+    await clickHeaderButtonByText(headerFrame, 'Save', 8000);
+    await waitSettled(detailPopup, 1500);
 }
 
 // ---- Start Server ----
