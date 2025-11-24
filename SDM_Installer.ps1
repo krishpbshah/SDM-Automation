@@ -306,6 +306,36 @@ io.on('connection', (socket) => {
         log('info', `Processing Tasks: ${tasks.join(', ')}`);
 
         for (const taskText of tasks) {
+            log('info', `Checking status for Task ${taskText}...`);
+            
+            // --- STATUS CHECK ---
+            try {
+                const status = await wfFrame.evaluate((text) => {
+                    const anchors = Array.from(document.querySelectorAll('a.record, a[href^="javascript:do_default("], tr.jqgrow td:first-child a'));
+                    const anchor = anchors.find(a => a.textContent.trim() == text);
+                    if(!anchor) return null;
+                    
+                    // Find row
+                    const row = anchor.closest('tr');
+                    if(!row) return null;
+                    
+                    // Column 5 (0-indexed) is usually Status
+                    const cols = row.querySelectorAll('td');
+                    if(cols.length > 5) return cols[5].textContent.trim();
+                    return null;
+                }, taskText);
+
+                if(status && status.toUpperCase() !== 'PENDING') {
+                    log('warn', `Skipping Task ${taskText}: Status is ${status}`);
+                    continue;
+                } else if(status) {
+                    log('info', `Status is ${status}. Processing...`);
+                }
+            } catch(e) {
+                log('warn', `Could not verify status for ${taskText}, proceeding anyway...`);
+            }
+            // --------------------
+
             log('info', `Starting Task ${taskText}...`);
             let success = false;
             let detailPopup = null;
