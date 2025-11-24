@@ -340,10 +340,9 @@ io.on('connection', (socket) => {
     });
 });
 
-// ---- Helpers (Simplified for brevity, same logic as before) ----
+// ---- Helpers (Restored from Automation.js) ----
 
 async function findFrameWithSelectors(pageOrPopup, selectors, timeoutMs=5000) {
-    // ... (Same logic as previous CLI, simplified for this snippet)
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
         for (const f of pageOrPopup.frames()) {
@@ -366,8 +365,6 @@ async function runAndCatchPopup(pageOrPopup, context, actionFn, timeout=15000) {
 }
 
 async function openWorkflowTasksTab(popup) {
-    // ... (Same logic, navigating to tab)
-    // For brevity in this generated string, assuming standard navigation
     await waitSettled(popup, 2000);
     const frame = await findFrameWithSelectors(popup, ['#tabHyprlnk1_5'], 5000) || popup.mainFrame();
     const tab = frame.locator('a#tabHyprlnk1_5');
@@ -378,7 +375,6 @@ async function openWorkflowTasksTab(popup) {
     }
     await waitSettled(popup, 2000);
     
-    // Find iframe
     for(let i=0; i<10; i++) {
         const f = popup.frames().find(f => (f.url()||'').includes('FACTORY=cr_wf'));
         if(f) return f;
@@ -395,7 +391,6 @@ async function discoverTasks(wfFrame) {
 }
 
 async function findTaskAnchorAcrossFrames(popup, taskText, preferredFrame) {
-    // ... (Same logic)
     const exactText = new RegExp(`^\\s*${taskText}\\s*$`);
     const tryFrame = async (f) => {
         const l = f.locator('a.record', { hasText: exactText }).first();
@@ -417,34 +412,104 @@ async function invokeDoDefaultForTask(frame, taskText) {
     }, taskText);
 }
 
+// ---- Restored Robust Helpers ----
+
+async function findHeaderFrame(detailPopup) {
+    const named = detailPopup.frame({ name: 'cai_header' });
+    if (named) return named;
+    for (const f of detailPopup.frames()) {
+        const hasBtn = await f.locator('a.button:has(span:has-text("Edit")), a.button:has(span:has-text("Save")), a:has-text("Edit"), a:has-text("Save")').first().count();
+        if (hasBtn) return f;
+    }
+    return detailPopup.mainFrame();
+}
+
+async function findMainFrame(detailPopup) {
+    const named = detailPopup.frame({ name: 'cai_main' });
+    if (named) return named;
+    for (const f of detailPopup.frames()) {
+        const hasFields = await f.locator('input[name="assignee_combo_name"], select[name="SET.status"]').first().count();
+        if (hasFields) return f;
+    }
+    return detailPopup.mainFrame();
+}
+
+async function clickHeaderButtonByText(headerFrame, label, timeout = 6000) {
+    const btn = headerFrame.locator(`a.button:has(span:has-text("${label}")), a:has-text("${label}")`).first();
+    if (!await btn.count()) throw new Error(`${label} button not found in header frame`);
+    try { await btn.scrollIntoViewIfNeeded({ timeout: 1500 }); } catch {}
+    await btn.click({ timeout });
+}
+
+async function selectOptionSmart(frame, selector, desiredValue, desiredLabel) {
+    const sel = frame.locator(selector);
+    if (!await sel.count()) throw new Error(`Select not found: ${selector}`);
+    try { await sel.selectOption({ value: desiredValue }); return true; } catch {}
+    if (desiredLabel) {
+        try { await sel.selectOption({ label: desiredLabel }); return true; } catch {}
+        try {
+            const opts = await frame.$$eval(selector + ' option', os => os.map(o => ({ v: o.value, t: (o.textContent || '').trim() })));
+            const found = opts.find(o => o.t.toLowerCase().includes(desiredLabel.toLowerCase()));
+            if (found) { await sel.selectOption({ value: found.v }); return true; }
+        } catch {}
+    }
+    return false;
+}
+
 async function updateTaskDetail(detailPopup, taskText) {
     log('info', `Updating Task ${taskText}...`);
-    const mainFrame = detailPopup.frames().find(f => f.name() === 'cai_main') || detailPopup.mainFrame();
     
+    const headerFrame = await findHeaderFrame(detailPopup);
+    const mainFrame = await findMainFrame(detailPopup);
+
     // Edit
-    const editBtn = detailPopup.locator('a.button:has(span:has-text("Edit")), a:has-text("Edit")').first();
-    if(await editBtn.count()) await editBtn.click();
-    await waitSettled(detailPopup, 1500);
+    try {
+        await clickHeaderButtonByText(headerFrame, 'Edit', 8000);
+        await waitSettled(detailPopup, 1200);
+        await mainFrame.waitForSelector('input[name="assignee_combo_name"]', { timeout: 6000 });
+        await mainFrame.waitForSelector('select[name="SET.status"]', { timeout: 6000 });
+    } catch (e) {
+        log('warn', `Edit click issue: ${e.message}`);
+    }
 
     // Assignee
-    const assignee = mainFrame.locator('input[name="assignee_combo_name"]');
-    if(await assignee.count()) {
-        await assignee.fill(userAssignee);
-        await assignee.press('Enter');
-    } else log('warn', 'Assignee field not found');
+    try {
+        const assignee = mainFrame.locator('input[name="assignee_combo_name"]');
+        if (await assignee.count()) {
+            await assignee.click({ timeout: 2000 }).catch(() => {});
+            await assignee.fill(userAssignee, { timeout: 3000 });
+            await assignee.press('Enter').catch(() => {});
+            await assignee.evaluate(el => el.blur()).catch(() => {});
+            await waitSettled(detailPopup, 500);
+        } else {
+            log('warn', `Assignee field not found in main frame.`);
+        }
+    } catch (e) {
+        log('warn', `Assignee set error: ${e.message}`);
+    }
 
     // Status
-    const status = mainFrame.locator('select[name="SET.status"]');
-    if(await status.count()) {
-        await status.selectOption({ value: 'COMP' }).catch(async () => {
-             await status.selectOption({ label: 'Complete' });
-        });
+    try {
+        const statusSel = 'select[name="SET.status"]';
+        const status = mainFrame.locator(statusSel);
+        if (await status.count()) {
+            const ok = await selectOptionSmart(mainFrame, statusSel, 'COMP', 'Complete');
+            if (!ok) log('warn', `Could not set status to Complete`);
+            await waitSettled(detailPopup, 300);
+        } else {
+            log('warn', `Status select not found in main frame.`);
+        }
+    } catch (e) {
+        log('warn', `Status set error: ${e.message}`);
     }
 
     // Save
-    const saveBtn = detailPopup.locator('a.button:has(span:has-text("Save")), a:has-text("Save")').first();
-    if(await saveBtn.count()) await saveBtn.click();
-    await waitSettled(detailPopup, 2000);
+    try {
+        await clickHeaderButtonByText(headerFrame, 'Save', 8000);
+        await waitSettled(detailPopup, 1500);
+    } catch (e) {
+        log('warn', `Save click error: ${e.message}`);
+    }
 }
 
 // ---- Start Server ----
