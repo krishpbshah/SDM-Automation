@@ -633,21 +633,24 @@ async function selectOptionSmart(frame, selector, desiredValue, desiredLabel) {
 async function updateTaskDetail(detailPopup, taskText) {
   log('info', `Updating Task ${taskText}...`);
   const headerFrame = await findHeaderFrame(detailPopup);
-  const mainFrame   = await findMainFrame(detailPopup);
 
   // Edit
   try {
     log('info', 'Clicking Edit...');
     await clickHeaderButtonByText(headerFrame, 'Edit', 8000);
-    await waitSettled(detailPopup, 1200);
-    await mainFrame.waitForSelector('input[name="assignee_combo_name"]', { timeout: 6000 });
-    await mainFrame.waitForSelector('select[name="SET.status"]', { timeout: 6000 });
+    log('info', 'Edit clicked. Waiting for reload...');
+    await waitSettled(detailPopup, 2000);
   } catch (e) {
       throw new Error(`Edit failed: ${e.message}`);
   }
 
+  // Re-acquire Main Frame after reload
+  const mainFrame = await findMainFrame(detailPopup);
+
   // Assignee
   try {
+    // Increased timeout to 15s because SDM reload is slow
+    await mainFrame.waitForSelector('input[name="assignee_combo_name"]', { timeout: 15000 });
     const assignee = mainFrame.locator('input[name="assignee_combo_name"]');
     if (await assignee.count()) {
       await assignee.click({ timeout: 2000 }).catch(() => {});
@@ -665,6 +668,7 @@ async function updateTaskDetail(detailPopup, taskText) {
   // Status
   try {
     const statusSel = 'select[name="SET.status"]';
+    await mainFrame.waitForSelector(statusSel, { timeout: 15000 });
     const status = mainFrame.locator(statusSel);
     if (await status.count()) {
         const ok = await selectOptionSmart(mainFrame, statusSel, 'COMP', 'Complete');
@@ -679,7 +683,9 @@ async function updateTaskDetail(detailPopup, taskText) {
 
   // Save
   try {
-    await clickHeaderButtonByText(headerFrame, 'Save', 8000);
+    // Re-acquire header frame just in case
+    const headerFrameSave = await findHeaderFrame(detailPopup);
+    await clickHeaderButtonByText(headerFrameSave, 'Save', 8000);
     await waitSettled(detailPopup, 1500);
   } catch (e) {
     throw new Error(`Save click error: ${e.message}`);
