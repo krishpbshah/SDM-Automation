@@ -572,11 +572,46 @@ async function findMainFrame(detailPopup) {
   return detailPopup.mainFrame();
 }
 
-async function clickHeaderButtonByText(headerFrame, label, timeout = 6000) {
-  const btn = headerFrame.locator(`a.button:has(span:has-text("${label}")), a:has-text("${label}")`).first();
-  try { await btn.waitFor({ state: 'visible', timeout }); } catch(e) { throw new Error(`${label} button not found in header frame`); }
-  try { await btn.scrollIntoViewIfNeeded({ timeout: 1500 }); } catch {}
-  await btn.click({ timeout });
+async function clickHeaderButtonByText(headerFrame, label, timeout = 8000) {
+    // Try finding the button in the specific frame first
+    const selectors = [
+        `a.button:has(span:has-text("${label}"))`,
+        `a:has-text("${label}")`,
+        `button:has-text("${label}")`
+    ];
+    
+    // specific fallback for "Edit"
+    if (label === 'Edit') {
+        selectors.push('a#imgBtn0', 'a[name="imgBtn0"]');
+    }
+
+    const combinedSelector = selectors.join(',');
+    const btn = headerFrame.locator(combinedSelector).first();
+
+    try {
+        await btn.waitFor({ state: 'visible', timeout });
+        await btn.scrollIntoViewIfNeeded().catch(()=>{});
+        await btn.click();
+        return;
+    } catch (e) {
+        // If failed in headerFrame, try searching ALL frames in the popup (fallback)
+        // This handles cases where findHeaderFrame picked the wrong one
+        log('warn', `Button '${label}' not found in header frame. Searching all frames...`);
+        const page = headerFrame.page();
+        if (page) {
+             for (const f of page.frames()) {
+                 const fallbackBtn = f.locator(combinedSelector).first();
+                 if (await fallbackBtn.count()) {
+                     try {
+                         await fallbackBtn.click({ timeout: 2000 });
+                         log('warn', `Found '${label}' button in fallback frame: ${f.name()}`);
+                         return;
+                     } catch {}
+                 }
+             }
+        }
+        throw new Error(`${label} button not found (tried frame '${headerFrame.name()}' and all others)`);
+    }
 }
 
 async function selectOptionSmart(frame, selector, desiredValue, desiredLabel) {
