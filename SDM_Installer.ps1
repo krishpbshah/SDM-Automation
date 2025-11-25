@@ -632,23 +632,52 @@ async function selectOptionSmart(frame, selector, desiredValue, desiredLabel) {
 
 async function updateTaskDetail(detailPopup, taskText) {
   log('info', `Updating Task ${taskText}...`);
-  const headerFrame = await findHeaderFrame(detailPopup);
-  const mainFrame   = await findMainFrame(detailPopup);
+  
+  // 1. Find Header Frame
+  let headerFrame = await findHeaderFrame(detailPopup);
 
-  // Edit
+  // 2. Click Edit
   try {
     log('info', 'Clicking Edit...');
     await clickHeaderButtonByText(headerFrame, 'Edit', 8000);
-    await waitSettled(detailPopup, 1200);
-    await mainFrame.waitForSelector('input[name="assignee_combo_name"]', { timeout: 6000 });
-    await mainFrame.waitForSelector('select[name="SET.status"]', { timeout: 6000 });
   } catch (e) {
       throw new Error(`Edit failed: ${e.message}`);
   }
 
+  // 3. WAIT FOR EDIT MODE (Look for 'Save' button)
+  // This confirms the page has reloaded and is ready for input
+  log('info', 'Waiting for Edit mode (Save button)...');
+  let inEditMode = false;
+  const startWait = Date.now();
+  while(Date.now() - startWait < 15000) {
+      try {
+          // Re-find header frame as it might have reloaded
+          const hf = await findHeaderFrame(detailPopup);
+          const saveBtn = hf.locator('a.button:has(span:has-text("Save")), a:has-text("Save")').first();
+          if (await saveBtn.count() && await saveBtn.isVisible()) {
+              inEditMode = true;
+              break;
+          }
+      } catch {}
+      await sleep(500);
+  }
+  
+  if (!inEditMode) {
+      log('warn', 'Could not confirm Edit mode (Save button missing), proceeding anyway...');
+  } else {
+      log('info', 'Edit mode confirmed.');
+  }
+
+  // 4. Find Main Frame & Assignee (Fresh)
+  // Re-acquire main frame to ensure we have the fresh handle after reload
+  const mainFrame = await findMainFrame(detailPopup);
+
   // Assignee
   try {
     const assignee = mainFrame.locator('input[name="assignee_combo_name"]');
+    // Wait for it to be visible (it should be if we are in Edit mode)
+    await assignee.waitFor({ state: 'visible', timeout: 10000 });
+    
     if (await assignee.count()) {
       await assignee.click({ timeout: 2000 }).catch(() => {});
       await assignee.fill(userAssignee, { timeout: 3000 });
@@ -679,7 +708,9 @@ async function updateTaskDetail(detailPopup, taskText) {
 
   // Save
   try {
-    await clickHeaderButtonByText(headerFrame, 'Save', 8000);
+    // Re-acquire header frame for Save button
+    const headerFrameSave = await findHeaderFrame(detailPopup);
+    await clickHeaderButtonByText(headerFrameSave, 'Save', 8000);
     await waitSettled(detailPopup, 1500);
   } catch (e) {
     throw new Error(`Save click error: ${e.message}`);
