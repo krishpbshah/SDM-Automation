@@ -552,78 +552,6 @@ async function invokeDoDefaultForTask(frame, taskText) {
   return true;
 }
 
-async function findHeaderFrame(detailPopup) {
-  // 1. Try 'gobtn' first (confirmed by user HTML)
-  const gobtn = detailPopup.frame({ name: 'gobtn' });
-  if (gobtn) return gobtn;
-
-  // 2. Try 'cai_header' (legacy/standard)
-  const named = detailPopup.frame({ name: 'cai_header' });
-  if (named) return named;
-
-  // 3. Fallback: Search all frames
-  for (const f of detailPopup.frames()) {
-    const hasBtn = await f.locator('a.button:has(span:has-text("Edit")), a.button:has(span:has-text("Save")), a:has-text("Edit"), a:has-text("Save")').first().count();
-    if (hasBtn) return f;
-  }
-  return detailPopup.mainFrame();
-}
-
-async function findMainFrame(detailPopup) {
-  // 1. Try 'cai_main' first (confirmed by user HTML)
-  const named = detailPopup.frame({ name: 'cai_main' });
-  if (named) return named;
-
-  // 2. Fallback: Search all frames
-  for (const f of detailPopup.frames()) {
-    const hasFields = await f.locator('input[name="assignee_combo_name"], select[name="SET.status"]').first().count();
-    if (hasFields) return f;
-  }
-  return detailPopup.mainFrame();
-}
-
-async function clickHeaderButtonByText(headerFrame, label, timeout = 8000) {
-    // Try finding the button in the specific frame first
-    const selectors = [
-        `a.button:has(span:has-text("${label}"))`,
-        `a:has-text("${label}")`,
-        `button:has-text("${label}")`
-    ];
-    
-    // specific fallback for "Edit"
-    if (label === 'Edit') {
-        selectors.push('a#imgBtn0', 'a[name="imgBtn0"]');
-    }
-
-    const combinedSelector = selectors.join(',');
-    const btn = headerFrame.locator(combinedSelector).first();
-
-    try {
-        await btn.waitFor({ state: 'visible', timeout });
-        await btn.scrollIntoViewIfNeeded().catch(()=>{});
-        await btn.click();
-        return;
-    } catch (e) {
-        // If failed in headerFrame, try searching ALL frames in the popup (fallback)
-        // This handles cases where findHeaderFrame picked the wrong one
-        log('warn', `Button '${label}' not found in header frame. Searching all frames...`);
-        const page = headerFrame.page();
-        if (page) {
-             for (const f of page.frames()) {
-                 const fallbackBtn = f.locator(combinedSelector).first();
-                 if (await fallbackBtn.count()) {
-                     try {
-                         await fallbackBtn.click({ timeout: 2000 });
-                         log('warn', `Found '${label}' button in fallback frame: ${f.name()}`);
-                         return;
-                     } catch {}
-                 }
-             }
-        }
-        throw new Error(`${label} button not found (tried frame '${headerFrame.name()}' and all others)`);
-    }
-}
-
 async function selectOptionSmart(frame, selector, desiredValue, desiredLabel) {
   const sel = frame.locator(selector);
   try { await sel.waitFor({ state: 'attached', timeout: 5000 }); } catch(e) { throw new Error(`Select not found: ${selector}`); }
@@ -640,60 +568,86 @@ async function selectOptionSmart(frame, selector, desiredValue, desiredLabel) {
   return false;
 }
 
+// --- STATELESS ROBUST HELPERS ---
+
+async function clickEditRobust(detailPopup) {
+    const start = Date.now();
+    while (Date.now() - start < 15000) {
+        // Scan all frames for the Edit button
+        for (const f of detailPopup.frames()) {
+            const btn = f.locator('a#imgBtn0, a[name="imgBtn0"], a.button:has(span:has-text("Edit"))').first();
+            if (await btn.count() && await btn.isVisible()) {
+                log('info', `Found Edit button in frame '${f.name()}'`);
+                try {
+                    await btn.click({ timeout: 2000 });
+                    return true; // Clicked!
+                } catch (e) {
+                    log('warn', 'Standard click failed, trying JS click...');
+                    try {
+                        await btn.evaluate(e => e.click());
+                        return true;
+                    } catch (e2) {}
+                }
+            }
+        }
+        await sleep(500);
+    }
+    throw new Error("Could not find or click Edit button");
+}
+
+async function waitForSaveRobust(detailPopup) {
+    const start = Date.now();
+    while (Date.now() - start < 20000) {
+        for (const f of detailPopup.frames()) {
+            const btn = f.locator('a.button:has(span:has-text("Save")), a:has-text("Save")').first();
+            if (await btn.count() && await btn.isVisible()) {
+                log('info', `Edit mode confirmed (Save button found in '${f.name()}')`);
+                return true;
+            }
+        }
+        await sleep(500);
+    }
+    return false;
+}
+
+async function findMainFrameRobust(detailPopup) {
+    const start = Date.now();
+    while (Date.now() - start < 15000) {
+        for (const f of detailPopup.frames()) {
+            const hasFields = await f.locator('input[name="assignee_combo_name"], select[name="SET.status"]').first().count();
+            if (hasFields) return f;
+        }
+        await sleep(500);
+    }
+    return null;
+}
+
 async function updateTaskDetail(detailPopup, taskText) {
   log('info', `Updating Task ${taskText}...`);
   
-  // 1. Find Header Frame (Prioritize 'gobtn')
-  let headerFrame = await findHeaderFrame(detailPopup);
-
-  // 2. Click Edit
+  // 1. Click Edit (Stateless)
   try {
-    log('info', 'Clicking Edit...');
-    await clickHeaderButtonByText(headerFrame, 'Edit', 8000);
+    log('info', 'Searching for Edit button...');
+    await clickEditRobust(detailPopup);
   } catch (e) {
       throw new Error(`Edit failed: ${e.message}`);
   }
 
-  // 3. WAIT FOR EDIT MODE (Look for 'Save' button)
-  // This confirms the page has reloaded and is ready for input
+  // 2. Wait for Save (Stateless)
   log('info', 'Waiting for Edit mode (Save button)...');
-  let inEditMode = false;
-  const startWait = Date.now();
-  while(Date.now() - startWait < 15000) {
-      try {
-          // AGGRESSIVE SEARCH: Check ALL frames for Save button
-          // This handles cases where the frame structure changes after reload
-          let foundSave = false;
-          for (const f of detailPopup.frames()) {
-              const saveBtn = f.locator('a.button:has(span:has-text("Save")), a:has-text("Save")').first();
-              if (await saveBtn.count() && await saveBtn.isVisible()) {
-                  foundSave = true;
-                  break;
-              }
-          }
-          
-          if (foundSave) {
-              inEditMode = true;
-              break;
-          }
-      } catch {}
-      await sleep(500);
-  }
+  const inEditMode = await waitForSaveRobust(detailPopup);
   
   if (!inEditMode) {
       log('warn', 'Could not confirm Edit mode (Save button missing), proceeding anyway...');
-  } else {
-      log('info', 'Edit mode confirmed.');
   }
 
-  // 4. Find Main Frame & Assignee (Fresh)
-  // Re-acquire main frame to ensure we have the fresh handle after reload
-  const mainFrame = await findMainFrame(detailPopup);
+  // 3. Find Main Frame (Stateless)
+  const mainFrame = await findMainFrameRobust(detailPopup);
+  if (!mainFrame) throw new Error("Could not find Main Frame with form fields");
 
   // Assignee
   try {
     const assignee = mainFrame.locator('input[name="assignee_combo_name"]');
-    // Wait for it to be visible (it should be if we are in Edit mode)
     await assignee.waitFor({ state: 'visible', timeout: 10000 });
     
     if (await assignee.count()) {
@@ -724,11 +678,29 @@ async function updateTaskDetail(detailPopup, taskText) {
     throw new Error(`Status set error: ${e.message}`);
   }
 
-  // Save
+  // Save (Stateless)
   try {
-    // Re-acquire header frame for Save button
-    const headerFrameSave = await findHeaderFrame(detailPopup);
-    await clickHeaderButtonByText(headerFrameSave, 'Save', 8000);
+    log('info', 'Clicking Save...');
+    // Reuse clickEditRobust logic but for Save
+    const start = Date.now();
+    let clicked = false;
+    while (Date.now() - start < 10000) {
+        for (const f of detailPopup.frames()) {
+            const btn = f.locator('a.button:has(span:has-text("Save")), a:has-text("Save")').first();
+            if (await btn.count() && await btn.isVisible()) {
+                try {
+                    await btn.click({ timeout: 2000 });
+                    clicked = true;
+                    break;
+                } catch (e) {
+                     try { await btn.evaluate(e => e.click()); clicked = true; break; } catch {}
+                }
+            }
+        }
+        if(clicked) break;
+        await sleep(500);
+    }
+    if(!clicked) throw new Error("Save button not found/clicked");
     await waitSettled(detailPopup, 1500);
   } catch (e) {
     throw new Error(`Save click error: ${e.message}`);
