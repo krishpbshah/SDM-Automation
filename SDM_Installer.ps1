@@ -576,29 +576,46 @@ async function selectOptionSmart(frame, selector, desiredValue, desiredLabel) {
 
 async function clickEditRobust(detailPopup) {
     const start = Date.now();
-    log('info', '[DEBUG] Scanning frames for Edit button...');
+    log('info', '[DEBUG] Scanning frames for Edit button (Prioritizing cai_main)...');
     while (Date.now() - start < 15000) {
-        // Scan all frames for the Edit button
+        // 1. Try cai_main explicitly FIRST
+        const caiMain = detailPopup.frame({ name: 'cai_main' });
+        if (caiMain) {
+             const btn = caiMain.locator('a#imgBtn0, a[name="imgBtn0"], a.button:has(span:has-text("Edit"))').first();
+             if (await btn.count() && await btn.isVisible()) {
+                 log('info', `[DEBUG] Found Edit button in prioritized frame 'cai_main'`);
+                 try {
+                     await btn.scrollIntoViewIfNeeded({ timeout: 1500 }).catch(()=>{});
+                     await sleep(500);
+                     await btn.click({ timeout: 6000 });
+                     log('success', `[DEBUG] Clicked Edit button in 'cai_main'`);
+                     return true;
+                 } catch (e) {
+                     log('warn', `[DEBUG] Standard click failed in 'cai_main': ${e.message}, trying JS click...`);
+                     try { await btn.evaluate(e => e.click()); return true; } catch {}
+                 }
+             }
+        }
+
+        // 2. Fallback (excluding gobtn as requested)
         for (const f of detailPopup.frames()) {
+            if (f.name() === 'cai_main') continue; // Already checked
+            if (f.name() === 'gobtn') {
+                // log('info', '[DEBUG] Skipping frame "gobtn" as requested.');
+                continue;
+            }
+            
             const btn = f.locator('a#imgBtn0, a[name="imgBtn0"], a.button:has(span:has-text("Edit"))').first();
             if (await btn.count() && await btn.isVisible()) {
                 log('info', `[DEBUG] Found Edit button in frame '${f.name()}'`);
                 try {
-                    // Match Old Code: Scroll then click
                     await btn.scrollIntoViewIfNeeded({ timeout: 1500 }).catch(()=>{});
-                    await sleep(500); // Small stability wait
+                    await sleep(500);
                     await btn.click({ timeout: 6000 });
                     log('success', `[DEBUG] Clicked Edit button in '${f.name()}'`);
-                    return true; // Clicked!
+                    return true;
                 } catch (e) {
-                    log('warn', `[DEBUG] Standard click failed in '${f.name()}': ${e.message}, trying JS click...`);
-                    try {
-                        await btn.evaluate(e => e.click());
-                        log('success', `[DEBUG] JS Clicked Edit button in '${f.name()}'`);
-                        return true;
-                    } catch (e2) {
-                        log('warn', `[DEBUG] JS Click failed in '${f.name()}': ${e2.message}`);
-                    }
+                    try { await btn.evaluate(e => e.click()); return true; } catch {}
                 }
             }
         }
@@ -685,7 +702,27 @@ async function updateTaskDetail(detailPopup, taskText) {
     const start = Date.now();
     let clicked = false;
     while (Date.now() - start < 10000) {
+        // 1. Try cai_main explicitly FIRST for Save too
+        const caiMain = detailPopup.frame({ name: 'cai_main' });
+        if (caiMain) {
+             const btn = caiMain.locator('a.button:has(span:has-text("Save")), a:has-text("Save")').first();
+             if (await btn.count() && await btn.isVisible()) {
+                 try {
+                     await btn.scrollIntoViewIfNeeded({ timeout: 1500 }).catch(()=>{});
+                     await btn.click({ timeout: 2000 });
+                     clicked = true;
+                     break;
+                 } catch (e) {
+                     try { await btn.evaluate(e => e.click()); clicked = true; break; } catch {}
+                 }
+             }
+        }
+        
+        // 2. Fallback (excluding gobtn)
         for (const f of detailPopup.frames()) {
+            if (f.name() === 'cai_main') continue; 
+            if (f.name() === 'gobtn') continue;
+
             const btn = f.locator('a.button:has(span:has-text("Save")), a:has-text("Save")').first();
             if (await btn.count() && await btn.isVisible()) {
                 try {
