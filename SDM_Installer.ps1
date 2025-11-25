@@ -553,8 +553,15 @@ async function invokeDoDefaultForTask(frame, taskText) {
 }
 
 async function findHeaderFrame(detailPopup) {
+  // 1. Try 'gobtn' first (confirmed by user HTML)
+  const gobtn = detailPopup.frame({ name: 'gobtn' });
+  if (gobtn) return gobtn;
+
+  // 2. Try 'cai_header' (legacy/standard)
   const named = detailPopup.frame({ name: 'cai_header' });
   if (named) return named;
+
+  // 3. Fallback: Search all frames
   for (const f of detailPopup.frames()) {
     const hasBtn = await f.locator('a.button:has(span:has-text("Edit")), a.button:has(span:has-text("Save")), a:has-text("Edit"), a:has-text("Save")').first().count();
     if (hasBtn) return f;
@@ -563,8 +570,11 @@ async function findHeaderFrame(detailPopup) {
 }
 
 async function findMainFrame(detailPopup) {
+  // 1. Try 'cai_main' first (confirmed by user HTML)
   const named = detailPopup.frame({ name: 'cai_main' });
   if (named) return named;
+
+  // 2. Fallback: Search all frames
   for (const f of detailPopup.frames()) {
     const hasFields = await f.locator('input[name="assignee_combo_name"], select[name="SET.status"]').first().count();
     if (hasFields) return f;
@@ -633,7 +643,7 @@ async function selectOptionSmart(frame, selector, desiredValue, desiredLabel) {
 async function updateTaskDetail(detailPopup, taskText) {
   log('info', `Updating Task ${taskText}...`);
   
-  // 1. Find Header Frame
+  // 1. Find Header Frame (Prioritize 'gobtn')
   let headerFrame = await findHeaderFrame(detailPopup);
 
   // 2. Click Edit
@@ -651,10 +661,18 @@ async function updateTaskDetail(detailPopup, taskText) {
   const startWait = Date.now();
   while(Date.now() - startWait < 15000) {
       try {
-          // Re-find header frame as it might have reloaded
-          const hf = await findHeaderFrame(detailPopup);
-          const saveBtn = hf.locator('a.button:has(span:has-text("Save")), a:has-text("Save")').first();
-          if (await saveBtn.count() && await saveBtn.isVisible()) {
+          // AGGRESSIVE SEARCH: Check ALL frames for Save button
+          // This handles cases where the frame structure changes after reload
+          let foundSave = false;
+          for (const f of detailPopup.frames()) {
+              const saveBtn = f.locator('a.button:has(span:has-text("Save")), a:has-text("Save")').first();
+              if (await saveBtn.count() && await saveBtn.isVisible()) {
+                  foundSave = true;
+                  break;
+              }
+          }
+          
+          if (foundSave) {
               inEditMode = true;
               break;
           }
