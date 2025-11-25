@@ -367,13 +367,17 @@ io.on('connection', (socket) => {
                     break;
                 } catch (e) {
                     log('warn', `Attempt ${attempt} failed: ${e.message}`);
-                    if(detailPopup) await detailPopup.close().catch(()=>{}); // Close if failed
+                    if(detailPopup) {
+                        log('info', `[DEBUG] Closing popup due to failure in Attempt ${attempt}`);
+                        await detailPopup.close().catch(()=>{}); 
+                    }
                     detailPopup = null;
                     await new Promise(r => setTimeout(r, 2000));
                 }
             }
             
             if(success && detailPopup) {
+                log('info', `[DEBUG] Closing popup after successful completion of Task ${taskText}`);
                 await detailPopup.close().catch(()=>{});
             }
             
@@ -572,21 +576,26 @@ async function selectOptionSmart(frame, selector, desiredValue, desiredLabel) {
 
 async function clickEditRobust(detailPopup) {
     const start = Date.now();
+    log('info', '[DEBUG] Scanning frames for Edit button...');
     while (Date.now() - start < 15000) {
         // Scan all frames for the Edit button
         for (const f of detailPopup.frames()) {
             const btn = f.locator('a#imgBtn0, a[name="imgBtn0"], a.button:has(span:has-text("Edit"))').first();
             if (await btn.count() && await btn.isVisible()) {
-                log('info', `Found Edit button in frame '${f.name()}'`);
+                log('info', `[DEBUG] Found Edit button in frame '${f.name()}'`);
                 try {
                     await btn.click({ timeout: 2000 });
+                    log('success', `[DEBUG] Clicked Edit button in '${f.name()}'`);
                     return true; // Clicked!
                 } catch (e) {
-                    log('warn', 'Standard click failed, trying JS click...');
+                    log('warn', `[DEBUG] Standard click failed in '${f.name()}': ${e.message}, trying JS click...`);
                     try {
                         await btn.evaluate(e => e.click());
+                        log('success', `[DEBUG] JS Clicked Edit button in '${f.name()}'`);
                         return true;
-                    } catch (e2) {}
+                    } catch (e2) {
+                        log('warn', `[DEBUG] JS Click failed in '${f.name()}': ${e2.message}`);
+                    }
                 }
             }
         }
@@ -597,11 +606,12 @@ async function clickEditRobust(detailPopup) {
 
 async function waitForSaveRobust(detailPopup) {
     const start = Date.now();
+    log('info', '[DEBUG] Scanning frames for Save button (Edit Mode Check)...');
     while (Date.now() - start < 20000) {
         for (const f of detailPopup.frames()) {
             const btn = f.locator('a.button:has(span:has-text("Save")), a:has-text("Save")').first();
             if (await btn.count() && await btn.isVisible()) {
-                log('info', `Edit mode confirmed (Save button found in '${f.name()}')`);
+                log('info', `[DEBUG] Edit mode confirmed (Save button found in '${f.name()}')`);
                 return true;
             }
         }
@@ -612,10 +622,14 @@ async function waitForSaveRobust(detailPopup) {
 
 async function findMainFrameRobust(detailPopup) {
     const start = Date.now();
+    log('info', '[DEBUG] Scanning frames for Assignee/Status fields...');
     while (Date.now() - start < 15000) {
         for (const f of detailPopup.frames()) {
             const hasFields = await f.locator('input[name="assignee_combo_name"], select[name="SET.status"]').first().count();
-            if (hasFields) return f;
+            if (hasFields) {
+                log('info', `[DEBUG] Found Main Frame with fields: '${f.name()}'`);
+                return f;
+            }
         }
         await sleep(500);
     }
