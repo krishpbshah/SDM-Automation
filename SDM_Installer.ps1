@@ -584,7 +584,10 @@ async function clickEditRobust(detailPopup) {
             if (await btn.count() && await btn.isVisible()) {
                 log('info', `[DEBUG] Found Edit button in frame '${f.name()}'`);
                 try {
-                    await btn.click({ timeout: 2000 });
+                    // Match Old Code: Scroll then click
+                    await btn.scrollIntoViewIfNeeded({ timeout: 1500 }).catch(()=>{});
+                    await sleep(500); // Small stability wait
+                    await btn.click({ timeout: 6000 });
                     log('success', `[DEBUG] Clicked Edit button in '${f.name()}'`);
                     return true; // Clicked!
                 } catch (e) {
@@ -602,22 +605,6 @@ async function clickEditRobust(detailPopup) {
         await sleep(500);
     }
     throw new Error("Could not find or click Edit button");
-}
-
-async function waitForSaveRobust(detailPopup) {
-    const start = Date.now();
-    log('info', '[DEBUG] Scanning frames for Save button (Edit Mode Check)...');
-    while (Date.now() - start < 20000) {
-        for (const f of detailPopup.frames()) {
-            const btn = f.locator('a.button:has(span:has-text("Save")), a:has-text("Save")').first();
-            if (await btn.count() && await btn.isVisible()) {
-                log('info', `[DEBUG] Edit mode confirmed (Save button found in '${f.name()}')`);
-                return true;
-            }
-        }
-        await sleep(500);
-    }
-    return false;
 }
 
 async function findMainFrameRobust(detailPopup) {
@@ -647,17 +634,16 @@ async function updateTaskDetail(detailPopup, taskText) {
       throw new Error(`Edit failed: ${e.message}`);
   }
 
-  // 2. Wait for Save (Stateless)
-  log('info', 'Waiting for Edit mode (Save button)...');
-  const inEditMode = await waitForSaveRobust(detailPopup);
-  
-  if (!inEditMode) {
-      log('warn', 'Could not confirm Edit mode (Save button missing), proceeding anyway...');
-  }
+  // 2. Wait for Page Settle (Match Old Code)
+  // Old code does: await waitSettled(detailPopup, 1200);
+  log('info', 'Waiting for page to settle after Edit click...');
+  await waitSettled(detailPopup, 2000);
 
   // 3. Find Main Frame (Stateless)
+  // Old code does: await mainFrame.waitForSelector('input[name="assignee_combo_name"]', { timeout: 6000 });
+  // We will use our robust finder which scans all frames
   const mainFrame = await findMainFrameRobust(detailPopup);
-  if (!mainFrame) throw new Error("Could not find Main Frame with form fields");
+  if (!mainFrame) throw new Error("Could not find Main Frame with form fields (Edit mode not active?)");
 
   // Assignee
   try {
@@ -703,6 +689,7 @@ async function updateTaskDetail(detailPopup, taskText) {
             const btn = f.locator('a.button:has(span:has-text("Save")), a:has-text("Save")').first();
             if (await btn.count() && await btn.isVisible()) {
                 try {
+                    await btn.scrollIntoViewIfNeeded({ timeout: 1500 }).catch(()=>{});
                     await btn.click({ timeout: 2000 });
                     clicked = true;
                     break;
